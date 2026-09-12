@@ -1,0 +1,495 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tenant root
+// ─────────────────────────────────────────────────────────────────────────
+
+/// One row per installed store. Every other table hangs off this by shopId
+/// (or, for ShopSession, by the shop domain the session-storage adapter
+/// requires) — deleting a Shop cascades and erases all of that shop's data,
+/// which is also what makes the SHOP_REDACT GDPR webhook a one-line delete.
+model Shop {
+  id            String    @id @default(cuid())
+  shopDomain    String    @unique
+  /// Cached from Shopify's `shop.email` on install/reauth — where
+  /// notification emails get sent. Null until the first successful fetch.
+  contactEmail  String?
+  installedAt   DateTime  @default(now())
+  uninstalledAt DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      ShopSession[]
+  urls          Url[]
+  urlLinks      UrlLink[]
+  scanJobs      ScanJob[]
+  scanResults   ScanResult[]
+  issues        Issue[]
+  redirects     Redirect[]
+  urlRedirects  UrlRedirect[]
+  subscription  Subscription?
+  notifications Notification[]
+  usageEvents   UsageEvent[]
+  webhookEvents WebhookEvent[]
+  auditLogs     AuditLog[]
+
+  @@map("shops")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────────────────────────────────
+
+/// OAuth session storage. Shape (id/shop/state/isOnline/...) is dictated by
+/// @shopify/shopify-app-session-storage-prisma — do not rename or drop any
+/// of those columns. `shopRef` is our own addition: a relation on the
+/// existing `shop` column back to Shop.shopDomain, so this table
+/// participates in the same cascade-on-delete isolation as everything else
+/// without the adapter needing to know it exists.
+model ShopSession {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean?
+  locale              String?
+  collaborator        Boolean?
+  emailVerified       Boolean?
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  shopRef Shop @relation(fields: [shop], references: [shopDomain], onDelete: Cascade)
+
+  @@index([shop])
+  @@map("shop_sessions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Link inventory
+// ─────────────────────────────────────────────────────────────────────────
+
+enum UrlSource {
+  HOMEPAGE
+  PRODUCT
+  COLLECTION
+  PAGE
+  BLOG_ARTICLE
+  SITEMAP
+  NAV_MENU
+  THEME
+  OTHER
+}
+
+/// A page LinkGuard knows about on the storefront — one row per distinct
+/// URL, sourced from products/collections/pages/blog articles/nav menus via
+/// the Admin API. This is the crawl root: UrlLink rows below are the
+/// hyperlinks found *on* each Url.
+model Url {
+  id         String    @id @default(cuid())
+  shopId     String
+  url        String
+  source     UrlSource
+  resourceId String?
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  shop  Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  links UrlLink[]
+
+  @@unique([shopId, url])
+  @@index([shopId])
+  @@index([shopId, source])
+  @@index([shopId, isActive])
+  @@map("urls")
+}
+
+/// One hyperlink found on a Url's page — the actual crawl edge that gets
+/// checked. Denormalizes shopId (not just reachable via sourceUrl) so
+/// shop-scoped queries never need to join through Url.
+model UrlLink {
+  id            String    @id @default(cuid())
+  shopId        String
+  sourceUrlId   String
+  targetUrl     String
+  isExternal    Boolean
+  linkText      String?
+  lastCheckedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  shop        Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sourceUrl   Url          @relation(fields: [sourceUrlId], references: [id], onDelete: Cascade)
+  scanResults ScanResult[]
+  issues      Issue[]
+  redirects   Redirect[]
+
+  @@unique([sourceUrlId, targetUrl])
+  @@index([shopId])
+  @@index([shopId, isExternal])
+  @@map("url_links")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Scanning
+// ─────────────────────────────────────────────────────────────────────────
+
+enum ScanJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ScanTrigger {
+  MANUAL
+  SCHEDULED
+  INSTALL
+}
+
+/// One scan run. urlsQueued/urlsChecked/issuesFound are running counters
+/// updated as the job progresses, so the UI can show live progress without
+/// re-aggregating ScanResult on every poll.
+model ScanJob {
+  id           String        @id @default(cuid())
+  shopId       String
+  status       ScanJobStatus @default(PENDING)
+  trigger      ScanTrigger
+  urlsQueued   Int           @default(0)
+  urlsChecked  Int           @default(0)
+  issuesFound  Int           @default(0)
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  error        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  shop    Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  results ScanResult[]
+
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+  @@map("scan_jobs")
+}
+
+enum ScanResultType {
+  OK
+  NOT_FOUND
+  GONE
+  SERVER_ERROR
+  REDIRECT
+  TIMEOUT
+  DNS_ERROR
+  OTHER_ERROR
+}
+
+/// The raw evidence: one row per link checked within a scan job. Issue rows
+/// are the durable, deduped, merchant-facing conclusion drawn from these;
+/// ScanResult is the append-only history that backs each conclusion.
+model ScanResult {
+  id             String         @id @default(cuid())
+  shopId         String
+  scanJobId      String
+  urlLinkId      String
+  statusCode     Int?
+  responseTimeMs Int?
+  finalUrl       String?
+  redirectChain  Json?
+  resultType     ScanResultType
+  errorMessage   String?
+  checkedAt      DateTime       @default(now())
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  scanJob ScanJob @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  urlLink UrlLink @relation(fields: [urlLinkId], references: [id], onDelete: Cascade)
+  issues  Issue[]
+
+  @@index([shopId])
+  @@index([scanJobId])
+  @@index([shopId, resultType])
+  @@index([urlLinkId, checkedAt])
+  @@map("scan_results")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Findings
+// ─────────────────────────────────────────────────────────────────────────
+
+enum IssueType {
+  BROKEN_404
+  SERVER_ERROR_5XX
+  REDIRECT_PROBLEM
+  REDIRECT_LOOP
+  TIMEOUT
+  OTHER
+}
+
+enum IssueSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum IssueStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+/// A persisted, merchant-facing problem. One open Issue per (shop, link,
+/// type) — repeated scan hits update lastSeenAt/scanResult instead of
+/// creating duplicates, which is what the unique constraint enforces.
+model Issue {
+  id           String        @id @default(cuid())
+  shopId       String
+  urlLinkId    String
+  scanResultId String?
+  type         IssueType
+  severity     IssueSeverity
+  status       IssueStatus   @default(OPEN)
+  statusCode   Int?
+  firstSeenAt  DateTime      @default(now())
+  lastSeenAt   DateTime      @default(now())
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  shop       Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  urlLink    UrlLink     @relation(fields: [urlLinkId], references: [id], onDelete: Cascade)
+  scanResult ScanResult? @relation(fields: [scanResultId], references: [id], onDelete: SetNull)
+  urlRedirects UrlRedirect[]
+
+  @@unique([shopId, urlLinkId, type])
+  @@index([shopId, status])
+  @@index([shopId, severity])
+  @@index([shopId, type])
+  @@map("issues")
+}
+
+/// A real Shopify URL redirect the merchant created through LinkGuard to
+/// fix a broken link — distinct from Redirect (which records what the
+/// *scanner* discovered already existing on the storefront). shopifyRedirectId
+/// is the Shopify-side record; this table is our audit trail of what we
+/// asked Shopify to create and when.
+model UrlRedirect {
+  id                String   @id @default(cuid())
+  shopId            String
+  issueId           String?
+  fromPath          String
+  toTarget          String
+  shopifyRedirectId String   @unique
+  createdAt         DateTime @default(now())
+
+  shop  Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  issue Issue? @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([shopId, fromPath])
+  @@map("url_redirects")
+}
+
+/// A detected redirect mapping for a link — distinct from Issue because not
+/// every redirect is a problem (a clean single-hop 301 is healthy and still
+/// worth recording); isLoop/isBroken flag the ones that are.
+model Redirect {
+  id          String   @id @default(cuid())
+  shopId      String
+  urlLinkId   String
+  fromUrl     String
+  toUrl       String
+  hopCount    Int
+  statusCode  Int
+  isLoop      Boolean  @default(false)
+  isBroken    Boolean  @default(false)
+  detectedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  urlLink UrlLink @relation(fields: [urlLinkId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopId, isLoop])
+  @@index([shopId, isBroken])
+  @@index([urlLinkId])
+  @@map("redirects")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Billing
+// ─────────────────────────────────────────────────────────────────────────
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  GROWTH
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PENDING
+  FROZEN
+}
+
+/// Current billing state — one row per shop (shopId is unique). Historical
+/// changes belong in AuditLog, not here; this table is "what's true now".
+model Subscription {
+  id                     String             @id @default(cuid())
+  shopId                 String             @unique
+  shopifySubscriptionId  String?            @unique
+  plan                   SubscriptionPlan   @default(FREE)
+  status                 SubscriptionStatus @default(ACTIVE)
+  currentPeriodEnd       DateTime?
+  /// Single-use token embedded in the returnUrl passed to Shopify's billing
+  /// confirmation page — required back on /api/billing/callback, which is
+  /// otherwise an unauthenticated endpoint (Shopify's redirect back can't
+  /// carry a bearer token). Cleared after the callback consumes it, so a
+  /// captured/replayed callback URL doesn't re-trigger confirmSubscription.
+  pendingNonce           String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Outbound activity
+// ─────────────────────────────────────────────────────────────────────────
+
+enum NotificationType {
+  NEW_ISSUES
+  SCAN_COMPLETE
+  SCAN_FAILED
+  WEEKLY_REPORT
+  BILLING
+}
+
+enum NotificationChannel {
+  EMAIL
+  WEBHOOK
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// A record of an alert sent (or attempted) to a merchant — history +
+/// delivery status, so we never silently double-send or lose track of a
+/// failed send.
+model Notification {
+  id        String              @id @default(cuid())
+  shopId    String
+  type      NotificationType
+  channel   NotificationChannel
+  payload   Json?
+  status    NotificationStatus  @default(PENDING)
+  sentAt    DateTime?
+  error     String?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt])
+  @@index([shopId, status])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Metering & observability
+// ─────────────────────────────────────────────────────────────────────────
+
+enum UsageEventType {
+  SCAN_RUN
+  PAGE_CHECKED
+  ISSUE_DETECTED
+}
+
+/// Append-only metering log — plan-limit enforcement (lib/billing) and
+/// usage analytics both read from this instead of COUNT()-ing feature
+/// tables directly.
+model UsageEvent {
+  id         String         @id @default(cuid())
+  shopId     String
+  type       UsageEventType
+  quantity   Int            @default(1)
+  metadata   Json?
+  occurredAt DateTime       @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, type])
+  @@index([shopId, occurredAt])
+  @@map("usage_events")
+}
+
+/// Inbound Shopify webhook delivery log. shopifyWebhookId is Shopify's
+/// X-Shopify-Webhook-Id header — unique, so redelivery (Shopify retries on
+/// timeout) is a no-op instead of double-processing.
+model WebhookEvent {
+  id               String    @id @default(cuid())
+  shopId           String
+  shopifyWebhookId String?   @unique
+  topic            String
+  payload           Json
+  processedAt      DateTime?
+  error            String?
+  createdAt        DateTime  @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, topic])
+  @@index([shopId, createdAt])
+  @@map("webhook_events")
+}
+
+enum AuditActor {
+  MERCHANT
+  SYSTEM
+  SHOPIFY
+}
+
+/// Append-only record of notable actions (install, plan change, manual scan
+/// trigger, settings change) for support and debugging — never updated,
+/// only inserted.
+model AuditLog {
+  id        String     @id @default(cuid())
+  shopId    String
+  actor     AuditActor
+  action    String
+  metadata  Json?
+  createdAt DateTime   @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt])
+  @@index([shopId, action])
+  @@map("audit_logs")
+}

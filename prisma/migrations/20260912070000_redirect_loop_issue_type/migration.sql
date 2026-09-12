@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "IssueType" ADD VALUE 'REDIRECT_LOOP';
+

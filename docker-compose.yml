@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: linkguard
+      POSTGRES_PASSWORD: linkguard
+      POSTGRES_DB: linkguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - linkguard_pgdata:/var/lib/postgresql/data
+
+volumes:
+  linkguard_pgdata:
