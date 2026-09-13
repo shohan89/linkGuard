@@ -8,3 +8,16 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* App Bridge only defines <ui-nav-menu> (and moves its content into
+   Shopify Admin's own sidebar) when actually running embedded in the
+   admin iframe. Outside that context — e.g. visiting the app URL directly
+   in a browser — the browser has no idea what the element is and falls
+   back to rendering its light-DOM children (the raw <a> links) as plain
+   inline text. Hiding it until the custom element is defined avoids that
+   flash of unstyled content in both cases (briefly on real embedded loads
+   before App Bridge finishes registering it, and permanently outside
+   Shopify Admin). */
+ui-nav-menu:not(:defined) {
+  display: none;
+}
