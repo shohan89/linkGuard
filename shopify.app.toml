@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "cb2fabe63799914d30732d4454c52642"
-application_url = "https://brief-glenn-hybrid-outlined.trycloudflare.com"
+application_url = "https://linkguard-jade.vercel.app"
 embedded = true
 name = "LinkGuard"
 
@@ -13,16 +13,16 @@ topics = ["app/uninstalled"]
 uri = "/api/webhooks"
 
 [webhooks.privacy_compliance]
-customer_deletion_url = "https://brief-glenn-hybrid-outlined.trycloudflare.com/api/webhooks"
-customer_data_request_url = "https://brief-glenn-hybrid-outlined.trycloudflare.com/api/webhooks"
-shop_deletion_url = "https://brief-glenn-hybrid-outlined.trycloudflare.com/api/webhooks"
+customer_deletion_url = "https://linkguard-jade.vercel.app/api/webhooks"
+customer_data_request_url = "https://linkguard-jade.vercel.app/api/webhooks"
+shop_deletion_url = "https://linkguard-jade.vercel.app/api/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_content,read_online_store_navigation,read_online_store_pages,read_products,write_online_store_navigation"
 
 [auth]
-redirect_urls = [ "https://brief-glenn-hybrid-outlined.trycloudflare.com/api/auth/callback" ]
+redirect_urls = [ "https://linkguard-jade.vercel.app/api/auth/callback" ]
 
 [build]
 automatically_update_urls_on_dev = false
