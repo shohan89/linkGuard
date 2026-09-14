@@ -5,7 +5,7 @@ import { URLDiscoveryService } from "@/lib/scanner/url-discovery.server";
 import { ScanService } from "@/lib/scanner/scan.server";
 import { NotificationService } from "@/lib/notifications";
 import { BillingService } from "@/lib/billing";
-import type { UrlSource } from "@prisma/client";
+import type { ScanJobStatus, UrlSource } from "@prisma/client";
 
 export interface ScanSummary {
   shopDomain: string;
@@ -161,4 +161,32 @@ export async function listScans(shopDomain: string): Promise<ScanSummary[]> {
       startedAt: job.startedAt as Date,
       finishedAt: job.finishedAt as Date,
     }));
+}
+
+export interface ScanStatus {
+  status: ScanJobStatus;
+  urlsQueued: number;
+  urlsChecked: number;
+  issuesFound: number;
+}
+
+/**
+ * Polled by the Scans page while a just-triggered scan is in flight, so the
+ * UI can show live progress instead of a static "scan started" message.
+ * Scoped to shopDomain — a scanJobId from another shop never matches.
+ */
+export async function getScanStatus(
+  shopDomain: string,
+  scanJobId: string,
+): Promise<ScanStatus | null> {
+  const shop = await getShop(shopDomain);
+  if (!shop) return null;
+
+  const job = await prisma.scanJob.findFirst({
+    where: { id: scanJobId, shopId: shop.id },
+    select: { status: true, urlsQueued: true, urlsChecked: true, issuesFound: true },
+  });
+  if (!job) return null;
+
+  return job;
 }

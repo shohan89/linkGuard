@@ -6,6 +6,7 @@ const urlUpsertMock = vi.fn();
 const urlLinkUpsertMock = vi.fn();
 const urlLinkFindManyMock = vi.fn();
 const scanJobFindManyMock = vi.fn();
+const scanJobFindFirstMock = vi.fn();
 const getShopMock = vi.fn();
 const loadOfflineSessionForShopMock = vi.fn();
 const discoverMock = vi.fn();
@@ -16,7 +17,7 @@ const recordScanUsageMock = vi.fn();
 
 vi.mock("@/lib/database/client.server", () => ({
   prisma: {
-    scanJob: { update: scanJobUpdateMock, findMany: scanJobFindManyMock },
+    scanJob: { update: scanJobUpdateMock, findMany: scanJobFindManyMock, findFirst: scanJobFindFirstMock },
     url: { upsert: urlUpsertMock },
     urlLink: { upsert: urlLinkUpsertMock, findMany: urlLinkFindManyMock },
   },
@@ -38,7 +39,7 @@ vi.mock("@/lib/billing", () => ({
   BillingService: { getMaxUrls: getMaxUrlsMock, recordScanUsage: recordScanUsageMock },
 }));
 
-const { runScan, listMonitoredUrls, listScans } = await import("./index");
+const { runScan, listMonitoredUrls, listScans, getScanStatus } = await import("./index");
 
 const fakeSession = { shop: "test.myshopify.com" } as Session;
 
@@ -210,5 +211,43 @@ describe("listScans", () => {
     expect(scans).toHaveLength(1);
     expect(scans[0].linksChecked).toBe(10);
     expect(scans[0].issuesFound).toBe(2);
+  });
+});
+
+describe("getScanStatus", () => {
+  beforeEach(() => {
+    getShopMock.mockReset();
+    scanJobFindFirstMock.mockReset();
+  });
+
+  it("returns null when the shop doesn't exist", async () => {
+    getShopMock.mockResolvedValue(null);
+    expect(await getScanStatus("ghost.myshopify.com", "job-1")).toBeNull();
+    expect(scanJobFindFirstMock).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the job doesn't exist for this shop (wrong shop or bad id)", async () => {
+    getShopMock.mockResolvedValue({ id: "shop-1" });
+    scanJobFindFirstMock.mockResolvedValue(null);
+
+    expect(await getScanStatus("test.myshopify.com", "someone-elses-job")).toBeNull();
+    expect(scanJobFindFirstMock).toHaveBeenCalledWith({
+      where: { id: "someone-elses-job", shopId: "shop-1" },
+      select: { status: true, urlsQueued: true, urlsChecked: true, issuesFound: true },
+    });
+  });
+
+  it("returns the job's live status fields", async () => {
+    getShopMock.mockResolvedValue({ id: "shop-1" });
+    scanJobFindFirstMock.mockResolvedValue({
+      status: "RUNNING",
+      urlsQueued: 10,
+      urlsChecked: 4,
+      issuesFound: 1,
+    });
+
+    const status = await getScanStatus("test.myshopify.com", "job-1");
+
+    expect(status).toEqual({ status: "RUNNING", urlsQueued: 10, urlsChecked: 4, issuesFound: 1 });
   });
 });

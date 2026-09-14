@@ -1,7 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Banner, BlockStack, Card, EmptyState, Page, Text } from "@shopify/polaris";
+import { useEffect, useState } from "react";
+import {
+  Banner,
+  BlockStack,
+  Card,
+  EmptyState,
+  InlineStack,
+  Page,
+  Spinner,
+  Text,
+} from "@shopify/polaris";
 import type { ScanSummary } from "@/lib/scanner";
 import { AuthenticatedPage } from "../_lib/authenticated-page";
 import { authenticatedFetch } from "../_lib/authenticated-fetch";
@@ -32,11 +41,85 @@ export function ScansPageClient({ shop }: { shop: string }) {
   );
 }
 
-export function ScansView({ scans }: { scans: ScanSummary[] }) {
+type ScanJobStatusLike = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+interface ActiveJob {
+  id: string;
+  status: ScanJobStatusLike;
+  urlsQueued: number;
+  urlsChecked: number;
+}
+
+const IN_PROGRESS_STATUSES: ScanJobStatusLike[] = ["PENDING", "RUNNING"];
+const POLL_INTERVAL_MS = 2000;
+
+export function ScansView({ scans: initialScans }: { scans: ScanSummary[] }) {
+  const [scans, setScans] = useState(initialScans);
   const [busy, setBusy] = useState(false);
+  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "critical" | "warning"; text: string } | null>(
     null,
   );
+
+  // Polls the just-triggered scan job until it leaves PENDING/RUNNING, then
+  // refreshes the history list — this is what drives the "scanning..."
+  // animation below rather than a one-shot "scan started" message.
+  useEffect(() => {
+    if (!activeJob || !IN_PROGRESS_STATUSES.includes(activeJob.status)) {
+      return;
+    }
+    const jobId = activeJob.id;
+
+    const interval = setInterval(async () => {
+      let response: Response;
+      try {
+        response = await authenticatedFetch(`/api/scans/${jobId}`);
+      } catch {
+        clearInterval(interval);
+        setActiveJob(null);
+        setMessage({ tone: "critical", text: "Lost connection while checking scan progress." });
+        return;
+      }
+
+      if (!response.ok) {
+        clearInterval(interval);
+        setActiveJob(null);
+        return;
+      }
+
+      const data = await response.json();
+      setActiveJob({
+        id: jobId,
+        status: data.status,
+        urlsQueued: data.urlsQueued,
+        urlsChecked: data.urlsChecked,
+      });
+
+      if (!IN_PROGRESS_STATUSES.includes(data.status)) {
+        clearInterval(interval);
+        setMessage(
+          data.status === "COMPLETED"
+            ? {
+                tone: "success",
+                text: `Scan complete — ${data.urlsChecked} link(s) checked, ${data.issuesFound} issue(s) found.`,
+              }
+            : { tone: "critical", text: "The scan failed. Please try again." },
+        );
+
+        const listResponse = await authenticatedFetch("/api/scans");
+        if (listResponse.ok) {
+          setScans(mapScans(await listResponse.json()));
+        }
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+    // Deliberately narrow: re-run only when the job id changes or its
+    // status transitions (e.g. RUNNING -> COMPLETED stops the interval).
+    // Depending on the whole activeJob object would restart the interval
+    // on every poll tick, since urlsChecked changes each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJob?.id, activeJob?.status]);
 
   async function handleRunScan() {
     setBusy(true);
@@ -46,10 +129,7 @@ export function ScansView({ scans }: { scans: ScanSummary[] }) {
       const data = await response.json().catch(() => ({}));
 
       if (response.status === 202) {
-        setMessage({
-          tone: "success",
-          text: "Scan started. Refresh this page in a minute or two to see the results.",
-        });
+        setActiveJob({ id: data.scanJobId, status: "PENDING", urlsQueued: 0, urlsChecked: 0 });
         return;
       }
       if (response.status === 409) {
@@ -74,13 +154,35 @@ export function ScansView({ scans }: { scans: ScanSummary[] }) {
     }
   }
 
+  const scanInProgress = activeJob !== null && IN_PROGRESS_STATUSES.includes(activeJob.status);
+
   return (
     <Page
       title="Scans"
-      primaryAction={{ content: "Run scan", onAction: handleRunScan, loading: busy }}
+      primaryAction={{
+        content: "Run scan",
+        onAction: handleRunScan,
+        loading: busy || scanInProgress,
+        disabled: scanInProgress,
+      }}
     >
       <BlockStack gap="400">
-        {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
+        {scanInProgress ? (
+          <Banner tone="info">
+            <InlineStack gap="200" blockAlign="center">
+              <Spinner size="small" accessibilityLabel="Scan in progress" />
+              <Text as="span">
+                {activeJob!.status === "PENDING"
+                  ? "Scan queued…"
+                  : activeJob!.urlsQueued > 0
+                    ? `Scanning your store… ${activeJob!.urlsChecked}/${activeJob!.urlsQueued} links checked`
+                    : "Scanning your store…"}
+              </Text>
+            </InlineStack>
+          </Banner>
+        ) : message ? (
+          <Banner tone={message.tone}>{message.text}</Banner>
+        ) : null}
 
         <Card>
           {scans.length === 0 ? (
