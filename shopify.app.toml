@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "cb2fabe63799914d30732d4454c52642"
+client_id = "c117076414026f159629cd9b32a53a1a"
 application_url = "https://linkguard-jade.vercel.app"
 embedded = true
 name = "LinkGuard"
