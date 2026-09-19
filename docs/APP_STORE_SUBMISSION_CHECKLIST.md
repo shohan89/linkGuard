@@ -10,7 +10,7 @@ known now.
 - ⚠️ Copy drafted in `docs/APP_STORE_LISTING.md` (name, tagline,
   description, feature list, category, keywords) — review and paste into
   Partner Dashboard.
-- ❌ App icon (1200×1200px) — not created. Needed before submission.
+- ⚠️ App icon: placeholder generated at `docs/assets/app-icon.png` (1200×1200, source in `app-icon.svg`). Replace with a designed one if you have a logo.
 - ⚠️ Pricing table in the listing must match `src/lib/billing/plans.ts`
   exactly — re-check if plans change before submitting.
 - ⚠️ Distribution must be switched from Custom to Public (or the public

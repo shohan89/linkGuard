@@ -21,10 +21,14 @@ reassuring. Before shooting, either:
   undersells the product — temporarily introduce 2–3 real broken links
   (e.g. a product link in a blog post pointing at a deleted product) so
   the Issues page has something to show, then scan.
-- Or ask me to write a one-off seed script that inserts a few realistic
-  `Issue`/`UrlLink` rows directly into Postgres for a designated demo
-  shop, purely for screenshot purposes (not a real scan) — tell me if you
-  want this and which shop domain to seed.
+- Or use the seed script already in the repo, which inserts realistic scans, issues, and redirect history for one dev store (every row is tagged so it can be removed cleanly):
+
+  ```
+  npx tsx scripts/seed-demo-data.ts --shop <store>.myshopify.com            # add
+  npx tsx scripts/seed-demo-data.ts --shop <store>.myshopify.com --remove   # undo
+  ```
+
+  Do not run a real scan afterwards if you want the screenshots to match; take them first.
 
 ## Shot list
 
