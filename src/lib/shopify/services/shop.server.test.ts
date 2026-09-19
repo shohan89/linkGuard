@@ -21,7 +21,7 @@ describe("ShopService.getShopInfo", () => {
         email: "owner@test-shop.example",
         currencyCode: "USD",
         primaryDomain: { url: "https://test-shop.example" },
-        plan: { displayName: "Basic" },
+        plan: { displayName: "Basic", partnerDevelopment: false },
       },
     });
 
@@ -35,11 +35,28 @@ describe("ShopService.getShopInfo", () => {
       currencyCode: "USD",
       primaryDomainUrl: "https://test-shop.example",
       planDisplayName: "Basic",
+      isDevelopmentStore: false,
     });
     expect(runAdminQueryMock).toHaveBeenCalledWith(
       fakeSession,
       expect.stringContaining("query ShopInfo"),
     );
+  });
+
+  it("flags partner development stores", async () => {
+    runAdminQueryMock.mockResolvedValue({
+      shop: {
+        id: "gid://shopify/Shop/2",
+        name: "Dev Shop",
+        myshopifyDomain: "dev.myshopify.com",
+        email: "dev@example.com",
+        currencyCode: "USD",
+        primaryDomain: { url: "https://dev.example" },
+        plan: { displayName: "Basic App Development", partnerDevelopment: true },
+      },
+    });
+
+    expect((await ShopService.getShopInfo(fakeSession)).isDevelopmentStore).toBe(true);
   });
 
   it("propagates errors from the shared client unchanged", async () => {

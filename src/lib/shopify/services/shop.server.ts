@@ -9,6 +9,8 @@ export interface ShopInfo {
   currencyCode: string;
   primaryDomainUrl: string;
   planDisplayName: string;
+  /** Partner development store — can't add a payment method, so only test billing charges can be approved. */
+  isDevelopmentStore: boolean;
 }
 
 const SHOP_INFO_QUERY = `#graphql
@@ -24,6 +26,7 @@ const SHOP_INFO_QUERY = `#graphql
       }
       plan {
         displayName
+        partnerDevelopment
       }
     }
   }
@@ -37,7 +40,7 @@ interface ShopInfoResponse {
     email: string;
     currencyCode: string;
     primaryDomain: { url: string };
-    plan: { displayName: string };
+    plan: { displayName: string; partnerDevelopment: boolean };
   };
 }
 
@@ -56,6 +59,7 @@ export const ShopService = {
       currencyCode: shop.currencyCode,
       primaryDomainUrl: shop.primaryDomain.url,
       planDisplayName: shop.plan.displayName,
+      isDevelopmentStore: shop.plan.partnerDevelopment,
     };
   },
 };

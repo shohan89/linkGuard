@@ -6,6 +6,7 @@ import {
   ShopifyBillingService,
   ShopifyBillingUserError,
 } from "@/lib/shopify/services/billing.server";
+import { ShopService } from "@/lib/shopify/services/shop.server";
 import {
   getPlanDefinition,
   PAID_PLAN_TIERS,
@@ -79,6 +80,12 @@ export const BillingService = {
 
     const plan = getPlanDefinition(params.targetTier);
 
+    // Development stores can't add a payment method, so Shopify only lets
+    // you approve a charge on one if it's flagged test — real merchant
+    // stores still get real charges in production.
+    const { isDevelopmentStore } = await ShopService.getShopInfo(params.session);
+    const useTestCharge = process.env.NODE_ENV !== "production" || isDevelopmentStore;
+
     // /api/billing/callback can't require a bearer token — Shopify's
     // redirect back from its confirmation page is an ordinary unauthenticated
     // browser navigation — so this nonce is what stands in for auth there.
@@ -92,7 +99,7 @@ export const BillingService = {
         name: `LinkGuard ${plan.name}`,
         priceUsd: plan.priceUsd,
         returnUrl: returnUrl.toString(),
-        test: process.env.NODE_ENV !== "production",
+        test: useTestCharge,
       },
     );
 

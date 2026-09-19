@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "@shopify/shopify-api";
 
 const getShopMock = vi.fn();
@@ -10,6 +10,7 @@ const usageEventCountMock = vi.fn();
 const createSubscriptionMock = vi.fn();
 const cancelSubscriptionMock = vi.fn();
 const getActiveSubscriptionsMock = vi.fn();
+const getShopInfoMock = vi.fn();
 
 vi.mock("@/lib/database/shops.server", () => ({ getShop: getShopMock }));
 vi.mock("@/lib/database/client.server", () => ({
@@ -21,6 +22,10 @@ vi.mock("@/lib/database/client.server", () => ({
     },
     usageEvent: { create: usageEventCreateMock, count: usageEventCountMock },
   },
+}));
+
+vi.mock("@/lib/shopify/services/shop.server", () => ({
+  ShopService: { getShopInfo: getShopInfoMock },
 }));
 
 class FakeShopifyBillingUserError extends Error {}
@@ -74,6 +79,11 @@ describe("BillingService.startUpgrade", () => {
     getShopMock.mockReset().mockResolvedValue({ id: "shop-1" });
     createSubscriptionMock.mockReset();
     subscriptionUpsertMock.mockReset().mockResolvedValue(undefined);
+    getShopInfoMock.mockReset().mockResolvedValue({ isDevelopmentStore: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("rejects FREE as an upgrade target", async () => {
@@ -117,6 +127,33 @@ describe("BillingService.startUpgrade", () => {
         create: expect.objectContaining({ plan: "STARTER", status: "PENDING", pendingNonce: nonce }),
       }),
     );
+  });
+
+  async function startStarterUpgrade() {
+    createSubscriptionMock.mockResolvedValue({ confirmationUrl: "https://x/confirm", subscriptionId: "gid://1" });
+    await BillingService.startUpgrade({
+      shopDomain: SHOP_DOMAIN,
+      session: fakeSession,
+      targetTier: "STARTER",
+      returnUrl: "https://app.example/callback",
+    });
+    return createSubscriptionMock.mock.calls[0][1].test as boolean;
+  }
+
+  it("sends a real charge for a real store in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(await startStarterUpgrade()).toBe(false);
+  });
+
+  it("sends a test charge for a development store even in production (it can't add a payment method)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    getShopInfoMock.mockResolvedValue({ isDevelopmentStore: true });
+    expect(await startStarterUpgrade()).toBe(true);
+  });
+
+  it("sends a test charge outside production regardless of store type", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    expect(await startStarterUpgrade()).toBe(true);
   });
 
   it("throws when the shop doesn't exist", async () => {
