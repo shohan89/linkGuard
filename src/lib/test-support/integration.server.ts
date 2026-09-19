@@ -67,7 +67,7 @@ export async function signRealSessionToken(params: {
  * overridable via env for a different setup.
  */
 export function getLiveTestStoreDomain(): string {
-  return process.env.INTEGRATION_TEST_SHOP_DOMAIN ?? "linkguard-test-store.myshopify.com";
+  return process.env.INTEGRATION_TEST_SHOP_DOMAIN ?? "link-guard-test-store.myshopify.com";
 }
 
 /** Matches @shopify/shopify-api's HMAC-validator exactly: base64 HMAC-SHA256 of the raw body. */

@@ -32,6 +32,9 @@ describe("Scanner pipeline (real Postgres + real crawler network calls)", () => 
         state: "test-state",
         isOnline: false,
         accessToken: "shpat_test_token_value",
+        // Far-future expiry so it isn't treated as a legacy non-expiring
+        // token needing a (real) Shopify migration call.
+        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
       }),
     );
 

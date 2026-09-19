@@ -6,8 +6,11 @@ import { ShopService } from "@/lib/shopify/services/shop.server";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  // Shopify rejects non-expiring offline tokens for the Admin API, so ask
+  // for an expiring one (with a refresh token) — see lib/shopify/session.server.ts.
   const { session, headers } = await shopify.auth.callback({
     rawRequest: request,
+    expiring: true,
   });
 
   // Shop must exist before ShopSession — shop_sessions.shop has a foreign
