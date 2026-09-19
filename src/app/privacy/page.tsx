@@ -76,7 +76,7 @@ export default function PrivacyPage() {
         <ul>
           <li>Shopify — Admin API access, billing, and app hosting platform (Vercel/Railway).</li>
           <li>A managed PostgreSQL provider (Supabase) — stores the data described above.</li>
-          <li>A managed Redis provider (Upstash) — background job queue and rate limiting.</li>
+          <li>Redis hosted on Railway — background job queue and rate limiting (holds job metadata and request counters, not store content).</li>
           <li>Resend — delivers LinkGuard&apos;s notification emails.</li>
         </ul>
         <p>

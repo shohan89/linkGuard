@@ -7,7 +7,7 @@ LinkGuard is two long-running processes plus three managed services:
 | **Web** (`npm start`, runs `next start`) | Serves the embedded app UI + all `/api/*` routes | Yes |
 | **Worker** (`npm run worker`, runs `src/worker.ts`) | Runs scans (BullMQ), the daily-scan/weekly-report cron schedulers | **No** — must be a persistent process |
 | Postgres (Supabase) | All app data | managed |
-| Redis (Upstash) | BullMQ queue + rate limiting | managed |
+| Redis (Railway) | BullMQ queue + rate limiting | managed |
 | Resend | Outbound notification emails | managed |
 
 The worker being a persistent process is the one constraint that rules out
@@ -55,7 +55,7 @@ works — worth confirming once on a new platform rather than assuming.
 
 ## Database and Redis
 
-This project has used Supabase (Postgres) and Upstash (Redis) throughout
+This project has used Supabase (Postgres) and Railway (Redis) throughout
 development — both have generous free tiers and work well for a
 launch-stage app. See `docs/DATABASE_MIGRATIONS.md` for the Supabase
 pooler-URL split (`DATABASE_URL` vs `DIRECT_URL`) in detail. Any
@@ -73,10 +73,9 @@ Dashboard (Apps → LinkGuard):
 3. **GDPR mandatory webhooks** (Compliance webhooks section): all three
    pointed at `<SHOPIFY_APP_URL>/api/webhooks` — customer data request,
    customer redact, shop redact.
-4. **Distribution**: set to Custom or start a public listing draft. This
-   is required before the Billing API will accept any
-   `appSubscriptionCreate` call, in production or in test mode — without
-   it, every upgrade attempt fails with "Apps without a public
+4. **Distribution**: must be **Public**. Custom distribution can never use the
+   Billing API (and can't be converted to Public afterwards), so every
+   upgrade attempt would fail with "Apps without a public
    distribution cannot use the Billing API" (see `docs/PRODUCTION_CHECKLIST.md`).
 
 `shopify.app.toml` mirrors most of this — update its `application_url`,

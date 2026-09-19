@@ -3,7 +3,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/database/client.server";
 
 /**
- * Real infrastructure (Supabase Postgres, Upstash Redis, and — for a few
+ * Real infrastructure (Supabase Postgres, Railway Redis, and — for a few
  * suites — the live Shopify test store's real Admin API) backs these
  * integration tests, unlike the mocked unit tests elsewhere in the repo.
  * Every shop domain these tests create must go through this helper so it's

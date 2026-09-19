@@ -6,8 +6,9 @@ hosting console) — nothing here can run those unattended.
 
 ## 1. Shopify Partner Dashboard (manual)
 
-- [ ] **Distribution set** (Apps → LinkGuard → Distribution): Custom or
-      public listing draft. Billing API calls fail without this — see
+- [ ] **Distribution set to Public** (Apps → LinkGuard → Distribution).
+      Custom distribution can never use the Billing API and can't be
+      converted later. Billing API calls fail without this — see
       `docs/DEPLOYMENT.md` and the note in
       `src/lib/billing/index.integration.test.ts`. Verify by actually
       running `npm run test:integration` against production-equivalent
@@ -57,7 +58,7 @@ hosting console) — nothing here can run those unattended.
 
 ## 4. Redis / background jobs
 
-- [ ] Production Redis provisioned (Upstash or equivalent), `REDIS_URL`
+- [ ] Production Redis provisioned (Railway, or any managed Redis), `REDIS_URL`
       uses `rediss://` (TLS) if the provider requires it.
 - [ ] Worker process deployed as a **persistent** process (not a
       serverless function) — confirm its startup log shows `Scan worker +
@@ -107,10 +108,10 @@ hosting console) — nothing here can run those unattended.
       callback lands back in the app with the new plan active.
 - [ ] Downgrade flow: cancel and confirm plan reverts to Free and the
       Shopify subscription shows cancelled in the Partner Dashboard.
-- [ ] Confirm `test: true` is only sent in non-production
-      (`process.env.NODE_ENV !== "production"` in
-      `src/lib/billing/index.ts`) — a real merchant must be charged
-      real money, not a test charge.
+- [ ] Confirm `test: true` is sent only for development stores or
+      non-production (`startUpgrade` in `src/lib/billing/index.ts` checks
+      the shop's `partnerDevelopment` flag) — a real merchant store must be
+      charged real money, not a test charge.
 
 ## 7. Webhooks
 

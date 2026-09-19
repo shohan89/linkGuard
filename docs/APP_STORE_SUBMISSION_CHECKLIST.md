@@ -31,8 +31,8 @@ known now.
 - ✅ Upgrade/downgrade/cancel flows built, with CSRF/replay-protected
   callback (nonce) and real-DB-backed plan-limit enforcement.
 - ⚠️ Never actually completed a *real* (non-test) end-to-end charge —
-  `test: true` only applies outside `NODE_ENV=production`, and dev stores
-  generally can't process real charges. Do at least one real upgrade on a
+  a partner development store always gets a `test: true` charge (it has
+  no payment method), so the real-charge path is untested. Do at least one real upgrade on a
   store capable of paying before/shortly after launch, to confirm the
   live (non-test) billing path works exactly like the tested one.
 - ⚠️ Confirm Shopify's Distribution requirement is satisfied (§1) — the
@@ -44,7 +44,7 @@ known now.
 - ✅ Written and published: `src/app/privacy/page.tsx` →
   `/privacy`. Describes exactly what's collected (shop domain, storefront
   URLs, scan results, billing state — no customer PII), why, third
-  parties (Shopify, Supabase, Upstash, Resend), and deletion on uninstall.
+  parties (Shopify, Supabase, Railway, Vercel, Resend), and deletion on uninstall.
 - ⚠️ Not legal advice — this is accurate to what the code actually does,
   but have it reviewed by someone qualified before relying on it for a
   live public app handling real merchants' data.
@@ -91,7 +91,7 @@ still in place as of the last check:
   (`WebhookEvent` table, dedup by `shopifyWebhookId`).
 - ✅ Billing callback CSRF/replay protection via single-use nonce.
 - ✅ Rate limiting on mutating endpoints (scans, redirects, billing
-  subscribe/cancel), Redis-backed, live-verified against real Upstash.
+  subscribe/cancel), Redis-backed, live-verified against the real Redis.
 - ✅ No secrets logged, no tokens reaching client components (checked via
   grep audit).
 - ✅ HTTPS-only in production (`SHOPIFY_APP_URL`), CSP `frame-ancestors`
