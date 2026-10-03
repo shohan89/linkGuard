@@ -53,6 +53,48 @@ describe("Shopify installation (real Postgres)", () => {
     expect(shop!.uninstalledAt).toBeNull();
   });
 
+  it("resets a paid subscription to Free on uninstall", async () => {
+    const shopDomain = uniqueShopDomain("uninstall-billing");
+    shopsToClean.push(shopDomain);
+
+    await markShopInstalled(shopDomain);
+    const shop = await getShop(shopDomain);
+    await prisma.subscription.create({
+      data: {
+        shopId: shop!.id,
+        plan: "PRO",
+        status: "ACTIVE",
+        shopifySubscriptionId: "gid://shopify/AppSubscription/1",
+      },
+    });
+
+    await markShopUninstalled(shopDomain);
+
+    const sub = await prisma.subscription.findUnique({ where: { shopId: shop!.id } });
+    expect(sub).toMatchObject({ plan: "FREE", status: "ACTIVE", shopifySubscriptionId: null });
+  });
+
+  it("starts a reinstalled shop on Free even if uninstall webhook was missed", async () => {
+    const shopDomain = uniqueShopDomain("reinstall-billing");
+    shopsToClean.push(shopDomain);
+
+    await markShopInstalled(shopDomain);
+    const shop = await getShop(shopDomain);
+    await prisma.subscription.create({
+      data: { shopId: shop!.id, plan: "PRO", status: "ACTIVE", shopifySubscriptionId: "gid://x/1" },
+    });
+    // Simulate shop flagged uninstalled without the subscription reset.
+    await prisma.shop.update({
+      where: { id: shop!.id },
+      data: { isActive: false, uninstalledAt: new Date() },
+    });
+
+    await markShopInstalled(shopDomain);
+
+    const sub = await prisma.subscription.findUnique({ where: { shopId: shop!.id } });
+    expect(sub).toMatchObject({ plan: "FREE", status: "ACTIVE", shopifySubscriptionId: null });
+  });
+
   it("caches the shop's contact email", async () => {
     const shopDomain = uniqueShopDomain("email");
     shopsToClean.push(shopDomain);
